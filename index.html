@@ -24,6 +24,10 @@
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
+  /* iOS standalone PWA: paint the root canvas so safe-area / overscroll regions
+     stay dark instead of showing the default white (body's gradient does not
+     propagate into the home-indicator inset on iOS WebKit). */
+  html{background:var(--ink)}
   body{
     background:var(--ink);
     color:var(--paper);

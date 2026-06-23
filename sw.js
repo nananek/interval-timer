@@ -1,4 +1,4 @@
-const CACHE = 'tanto-iv-v2';
+const CACHE = 'tanto-iv-v3';
 const ASSETS = [
   './',
   './index.html',
