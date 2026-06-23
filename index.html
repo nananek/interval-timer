@@ -147,6 +147,7 @@
   .tw-skip{--svg:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2036%2036%22%3E%3Cpath%20fill%3D%22%233B88C3%22%20d%3D%22M36%2032c0%202.209-1.791%204-4%204H4c-2.209%200-4-1.791-4-4V4c0-2.209%201.791-4%204-4h28c2.209%200%204%201.791%204%204v28z%22%2F%3E%3Cpath%20fill%3D%22%23FFF%22%20d%3D%22M27%2018L15%207v9.166L5%207v22l10-9.167V29zm0-11h4v22h-4z%22%2F%3E%3C%2Fsvg%3E")}
   .tw-bell{--svg:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2036%2036%22%3E%3Cpath%20fill%3D%22%23FFAC33%22%20d%3D%22M28%2013c0%2011%205%2010%205%2015%200%200%200%202-2%202H5c-2%200-2-2-2-2%200-5%205-4%205-15C8%207.478%2012.477%203%2018%203s10%204.478%2010%2010z%22%2F%3E%3Ccircle%20fill%3D%22%23FFAC33%22%20cx%3D%2218%22%20cy%3D%223%22%20r%3D%223%22%2F%3E%3Cpath%20fill%3D%22%23FFAC33%22%20d%3D%22M18%2036c2.209%200%204-1.791%204-4h-8c0%202.209%201.791%204%204%204z%22%2F%3E%3C%2Fsvg%3E")}
   .tw-vib{--svg:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2036%2036%22%3E%3Cpath%20fill%3D%22%23F4900C%22%20d%3D%22M36%2032c0%204-4%204-4%204H4c-4%200-4-4-4-4V4c0-4%204-4%204-4h28s4%200%204%204v28z%22%2F%3E%3Cpath%20fill%3D%22%23FFF%22%20d%3D%22M24%203H12C9%203%209%206%209%206v24c0%203%203%203%203%203h12c3%200%203-3%203-3V6c0-3-3-3-3-3zm1%2025H11V8h14v20zM2%2015v5l5-2v-1zm1-2l4%202v-2l-4-3zm0%209l4-2v2l-4%203zm31-7v5l-5-2v-1zm-1-2l-4%202v-2l4-3zm0%209l-4-2v2l4%203z%22%2F%3E%3C%2Fsvg%3E")}
+  .tw-notify{--svg:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2036%2036%22%3E%3Cpath%20fill%3D%22%233B88C3%22%20d%3D%22M14%2019c-3.314%200-6%202.687-6%206s2.686%206%206%206%206-2.687%206-6-2.687-6-6-6zm0%2010c-2.209%200-4-1.791-4-4s1.791-4%204-4%204%201.791%204%204-1.791%204-4%204z%22%2F%3E%3Cpath%20fill%3D%22%2355ACEE%22%20d%3D%22M1.783%2014.023v.02C.782%2014.263%200%2015.939%200%2018s.782%203.737%201.783%203.956v.021l28.701%207.972V6.064L1.783%2014.023z%22%2F%3E%3Cellipse%20fill%3D%22%23269%22%20cx%3D%2231%22%20cy%3D%2218%22%20rx%3D%225%22%20ry%3D%2212%22%2F%3E%3C%2Fsvg%3E")}
 
   /* --- settings sheet --- */
   .scrim{
@@ -268,7 +269,9 @@
     <div class="toggles">
       <div class="toggle on" id="soundToggle"><i class="tw tw-bell"></i>音</div>
       <div class="toggle on" id="vibToggle"><i class="tw tw-vib"></i>バイブ</div>
+      <div class="toggle" id="notifyToggle"><i class="tw tw-notify"></i>通知</div>
     </div>
+    <div class="hint" id="notifyHint" style="display:none;margin-left:0;margin-top:10px"></div>
   </div>
 
   <button class="sheet-done" id="sheetDone">完了</button>
@@ -285,13 +288,17 @@ const cfg = {
   count: 10,
   sound: true,
   vib: true,
+  notify: false,           // OS 通知（許可が要るのでデフォルト OFF・明示的オプトイン）
 };
 let q = 1;                 // current question number
 let phase = 'solve';       // 'solve' | 'review'
-let remaining = cfg.solve;
+let remaining = cfg.solve; // 派生値。真実の source は phaseEndsAt（毎フレーム再計算して入れ直す）
 let running = false;
 let ticker = null;
 let started = false;       // has the session begun at all
+let phaseEndsAt = null;    // 現フェーズが終了する Date.now() ミリ秒（時刻ベースの真実）
+let pausedRemainingMs = null; // 一時停止時に保存する残りミリ秒
+let wakeLock = null;       // Screen Wake Lock（稼働中の暗転抑制）
 
 // ---- persistence ----
 function save(){ try{ localStorage.setItem('tic-cfg', JSON.stringify(cfg)); }catch(e){} }
@@ -358,33 +365,95 @@ function render(){
   }
 }
 
+// ---- wake lock (暗転抑制: 稼働中は画面を点けたままにする) ----
+async function acquireWakeLock(){
+  if(!('wakeLock' in navigator)) return;       // 非対応は静かに無効化
+  try{ wakeLock = await navigator.wakeLock.request('screen'); }
+  catch(e){ /* 電池セーバー等で拒否されることがある。失敗は無視 */ }
+}
+async function releaseWakeLock(){
+  try{ if(wakeLock){ await wakeLock.release(); } }catch(e){}
+  wakeLock = null;
+}
+
+// ---- notifications (OS 通知。tick() で切替を検知した瞬間に発火する。定刻保証はしない) ----
+function canNotify(){ return cfg.notify && ('Notification' in window) && Notification.permission==='granted'; }
+function notifyPhase(kind){
+  if(!canNotify()) return;
+  try{
+    if(kind==='solve') new Notification('解くフェーズ', { body:`問題 ${q} / 全 ${cfg.count}`, tag:'phase', renotify:true, silent:false });
+    else               new Notification('解説フェーズ', { body:`問題 ${q} の解説`,        tag:'phase', renotify:true, silent:false });
+  }catch(e){}
+  // 補足: インストール済み PWA では registration.showNotification() の方が扱いが安定する。
+  // 採用する場合は sw.js に notificationclick ハンドラ（クリックでフォーカス）も足す。
+}
+// フェーズ切替の合図をまとめて発火（音=下降/上昇・バイブ・OS 通知）
+function signalPhase(kind){ beep(kind); buzz(); notifyPhase(kind); }
+
+// ---- elapsed-time helpers ----
+function phaseTotal(){ return phase==='solve' ? cfg.solve : cfg.review; } // 秒
+function remainingMs(){
+  if(!running && pausedRemainingMs!=null) return pausedRemainingMs;
+  if(phaseEndsAt==null) return phaseTotal()*1000;
+  return phaseEndsAt - Date.now();
+}
+function syncRemaining(){ remaining = Math.max(0, Math.ceil(remainingMs()/1000)); }
+
 // ---- engine ----
+// 時刻チェック型: 裏で setInterval が間引かれても、復帰時に過ぎたフェーズをループで追いつく。
 function tick(){
-  remaining--;
-  if(remaining < 0){ advance(); return; }
+  if(!running) return;
+  let guard = 0, advanced = false;
+  while(running && phaseEndsAt!=null && Date.now() >= phaseEndsAt && guard < 1000){
+    advance(false);          // 追いつき中は通知しない（途中フェーズの音を連打しない）
+    advanced = true;
+    guard++;                 // 無限ループ安全弁（異常な巨大経過への保険）
+  }
+  if(!running) return;       // 追いつき中に finish() した（"完了！"表示を上書きしない）
+  if(advanced) signalPhase(phase); // 最終的に到達したフェーズの通知だけ 1 回鳴らす
+  syncRemaining();
   render();
 }
-function advance(){
-  // move to next phase or next question
+function advance(notify){
+  // フェーズ／問題を進め、phaseEndsAt を「前フェーズ終了時刻に加算」して再設定する
+  // （Date.now() 基準でなく加算にすることで、復帰時のループでも累積ズレが出ない）
+  const base = (phaseEndsAt!=null) ? phaseEndsAt : Date.now();
   if(phase==='solve'){
-    phase='review'; remaining=cfg.review;
-    beep('review'); buzz();
+    phase='review';
+    phaseEndsAt = base + cfg.review*1000;
+    if(notify) signalPhase('review');
   } else {
     if(q >= cfg.count){ finish(); return; }
-    q++; phase='solve'; remaining=cfg.solve;
-    beep('solve'); buzz();
+    q++; phase='solve';
+    phaseEndsAt = base + cfg.solve*1000;
+    if(notify) signalPhase('solve');
   }
+  syncRemaining();
   render();
 }
 function start(){
-  if(!started){ started=true; }
-  running=true;
+  if(pausedRemainingMs!=null){
+    // 一時停止からの再開: 残りミリ秒を保持して終了時刻を再設定
+    phaseEndsAt = Date.now() + pausedRemainingMs;
+    pausedRemainingMs = null;
+  } else {
+    // 新規フェーズ開始
+    phaseEndsAt = Date.now() + phaseTotal()*1000;
+  }
+  started = true; running = true;
+  acquireWakeLock();                 // ユーザー操作起点で取得
   clearInterval(ticker);
-  ticker=setInterval(tick,1000);
+  ticker = setInterval(tick, 250);   // 表示更新用（復帰直後の見た目ズレを抑えるため短め）
+  syncRemaining();
   render();
 }
 function pause(){
-  running=false; clearInterval(ticker); render();
+  pausedRemainingMs = Math.max(0, (phaseEndsAt!=null ? phaseEndsAt - Date.now() : phaseTotal()*1000));
+  running = false;
+  clearInterval(ticker);
+  releaseWakeLock();
+  syncRemaining();
+  render();
 }
 function toggle(){
   // unlock audio on first user gesture
@@ -392,21 +461,42 @@ function toggle(){
   running ? pause() : start();
 }
 function skip(){
-  if(!started){ started=true; }
-  remaining=0; advance();
-  if(running){ clearInterval(ticker); ticker=setInterval(tick,1000); }
+  // unlock audio on user gesture (skip from idle でも音が鳴るように)
+  try{ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume(); }catch(e){}
+  if(!started) started = true;
+  if(running){
+    phaseEndsAt = Date.now();   // 「終了時刻が今」→ 既存ループで 1 フェーズ進む
+    tick();
+  } else {
+    // 一時停止／アイドル: 1 フェーズ手動で進め、新フェーズは満タンから再開できるよう保存
+    advance(true);
+    if(running) return;         // advance が finish() した場合は何もしない
+    pausedRemainingMs = phaseTotal()*1000;
+    syncRemaining();
+    render();
+  }
 }
 function finish(){
   running=false; clearInterval(ticker);
+  releaseWakeLock();
+  // セッション完了の合図（音=上昇・バイブ・OS 通知）
   beep('review'); buzz();
-  q=1; phase='solve'; remaining=cfg.solve; started=false;
+  if(canNotify()){
+    try{ new Notification('セッション完了', { body:`全 ${cfg.count} 問おつかれさまでした`, tag:'phase', renotify:true, silent:false }); }catch(e){}
+  }
+  q=1; phase='solve';
+  phaseEndsAt=null; pausedRemainingMs=null; started=false;
+  remaining=cfg.solve;
   render();
   $('sub').textContent = '完了！';
   setTimeout(()=>{ render(); }, 2200);
 }
 function resetSession(){
   running=false; started=false; clearInterval(ticker);
-  q=1; phase='solve'; remaining=cfg.solve;
+  releaseWakeLock();
+  q=1; phase='solve';
+  phaseEndsAt=null; pausedRemainingMs=null;
+  remaining=cfg.solve;
   render();
 }
 
@@ -438,6 +528,8 @@ document.querySelectorAll('.stepper button').forEach(b=>{
     refreshInputs();
     if(t==='count') buildDots();
     if(!started){ resetSession(); } // reflect new time live when idle
+    // 稼働中は現フェーズの phaseEndsAt を変えない（走っている回は今の長さのまま、
+    // 次フェーズ以降から新設定が効く）。phaseEndsAt は cfg と独立なので追加処理は不要。
     render(); // keep summary line in sync even mid-session
   };
 });
@@ -446,6 +538,25 @@ document.querySelectorAll('.stepper button').forEach(b=>{
 $('soundToggle').onclick = function(){ cfg.sound=!cfg.sound; this.classList.toggle('on',cfg.sound); };
 $('vibToggle').onclick   = function(){ cfg.vib=!cfg.vib; this.classList.toggle('on',cfg.vib);
   if(cfg.vib && navigator.vibrate) navigator.vibrate(40); };
+$('notifyToggle').onclick = function(){
+  const hint = $('notifyHint');
+  if(cfg.notify){ // turning OFF
+    cfg.notify=false; this.classList.remove('on'); hint.style.display='none'; save(); return;
+  }
+  // turning ON → 許可をユーザー操作起点でリクエスト
+  if(!('Notification' in window)){
+    hint.textContent='このブラウザは通知に対応していません'; hint.style.display='block'; return;
+  }
+  Promise.resolve(Notification.requestPermission()).then(perm=>{
+    if(perm==='granted'){
+      cfg.notify=true; this.classList.add('on'); hint.style.display='none';
+    } else { // denied / default
+      cfg.notify=false; this.classList.remove('on');
+      hint.textContent='ブラウザでこのサイトの通知が拒否されています'; hint.style.display='block';
+    }
+    save();
+  });
+};
 
 // ---- install prompt ----
 let deferredPrompt=null;
@@ -468,13 +579,24 @@ document.addEventListener('keydown',e=>{
   if(e.code==='ArrowRight'){ skip(); }
 });
 
+// ---- background recovery: 復帰時に即補正 + Wake Lock 再取得 ----
+// Wake Lock は画面オフ／タブ非表示で OS が自動解放するため、復帰時に running なら取り直す。
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden) return;
+  if(running){ tick(); acquireWakeLock(); }
+});
+window.addEventListener('focus', ()=>{ if(running) tick(); });
+
 // ---- boot ----
 load();
+// 通知許可が実際に granted でなければ ON 表示を残さない（権限取消し等との整合）
+if(cfg.notify && !('Notification' in window && Notification.permission==='granted')) cfg.notify=false;
 remaining=cfg.solve;
 refreshInputs();
 buildDots();
 $('soundToggle').classList.toggle('on',cfg.sound);
 $('vibToggle').classList.toggle('on',cfg.vib);
+$('notifyToggle').classList.toggle('on',cfg.notify);
 render();
 
 // ---- service worker ----
